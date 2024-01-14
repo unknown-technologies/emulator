@@ -1,0 +1,6 @@
+*.sw?
+*.zip
+*.tgz
+build/
+emulator
+roms/820816-0181.*.bin
