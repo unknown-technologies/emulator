@@ -52,3 +52,9 @@ Get the keyboard matrix mapping:
 ```
 for i in `seq 0 71`; do result=$(timeout 5 ./emulator -k$i -e fdd/\#17\ Male\ Voices\ -\ Mixed\ Choir.emufd | grep 'alloc_voice\|LEDs:' | tail -n 1); echo "$i => $result"; done
 ```
+
+
+Floppy Format
+-------------
+
+Look at the FLOPPY.md file for a detailed description of the floppy format.
