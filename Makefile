@@ -24,7 +24,7 @@ CFLAGS		:=	$(OPTFLAGS) -g -Wall -std=c99 \
 			$(INCLUDE) -DUNIX $(SANITIZE) \
 			-DUSE_FLOAT
 
-LDFLAGS		:=	-Wl,-x -Wl,--gc-sections $(SANITIZE) $(OPTFLAGS)
+LDFLAGS		:=	-Wl,-x -Wl,--gc-sections $(SANITIZE) $(OPTFLAGS) -lm
 
 CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 

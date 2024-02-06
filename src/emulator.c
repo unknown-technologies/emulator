@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 
 #include "types.h"
 #include "emulator.h"
@@ -202,6 +203,7 @@
 /* #define DEBUG_LEDS */
 /* #define DEBUG_KBD */
 #define DEBUG_CH
+#define DEBUG_CHCONFIG
 /* #define DEBUG_IO */
 
 static inline u8 EMUDescrambleData(u8 data)
@@ -1357,8 +1359,79 @@ void EMUPrintCH(Emulator* ctx, unsigned int ch)
 	u8 cha16 = chncsh & _BV(4);
 	u8 fc = chncsh >> 5;
 
-	double freq = 11.55e6 / (0xFFF - (0xC00 | timer));
+	double freq = 11.55e6 / (0x1000 - (0xC00 | timer));
 	printf("TIMER=%03X [%8.2fHz] RST=%X GATE=%X CHnA16=%X FC=%X\n", timer, freq, !rst, !!gate, !!cha16, 7 - fc);
+}
+#endif
+
+#ifdef DEBUG_CHCONFIG
+static inline double midi_to_freq(double key)
+{
+	return 440.0 * pow(2.0, (key - 69.0) / 12.0);
+}
+
+static inline double freq_to_midi(double freq)
+{
+	return 69.0 + (12.0 * (log(freq / 440.0) / log(2.0)));
+}
+
+static const char* keynames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+
+static void get_keyname(char* out, unsigned int key)
+{
+	char* pad = keynames[key % 12][1] != 0 ? "" : " ";
+	sprintf(out, "%s%s%d", keynames[key % 12], pad, key / 12);
+}
+
+void EMUPrintCHConfig(Emulator* ctx, unsigned int ch)
+{
+	unsigned int dmacs = ch / 2;
+	unsigned int dmach = ch % 2 ? 2 : 0;
+
+	u8 chncsl = ctx->channel_cfg_l[ch];
+	u8 chncsh = ctx->channel_cfg_h[ch];
+	u16 value = (((u16) chncsh) << 8) | chncsl;
+
+	u16 timer = value & 0x3FF;
+	u8 rst = chncsh & _BV(2);
+	u8 gate = chncsh & _BV(3);
+	u8 cha16 = chncsh & _BV(4);
+	u8 fc = chncsh >> 5;
+
+	DMA* dma = &ctx->dma[dmacs];
+	DMACH* dch0 = &dma->channel[dmach];
+	DMACH* dch1 = &dma->channel[dmach + 1];
+
+	u16 start_addr = dch0->addr;
+	u16 start_wc   = dch0->wc;
+	u16 loop_addr  = dch1->addr;
+	u16 loop_wc    = dch1->wc;
+
+	if(!rst) {
+		return;
+	}
+
+	double freq = 11.55e6 / (0x1000 - (0xC00 | timer));
+	double playback = freq / 27778.0;
+
+	unsigned int rootkey = 0xFF;
+	double ref = 0;
+	double act = 0;
+	double root = 0;
+	if(__builtin_popcountll(ctx->keyboard) == 1) {
+		unsigned int keyid = __builtin_ctzll(ctx->keyboard);
+		unsigned int midi = keyid ^ 7;
+		if(midi < 49) {
+			ref = midi_to_freq(midi + 24);
+			act = ref / playback;
+			root = freq_to_midi(act) - 24;
+			rootkey = round(root);
+		}
+	}
+
+	char rootkeyname[8];
+	get_keyname(rootkeyname, rootkey);
+	printf("CH%X: TIMER=%03X [%8.2fHz] RST=%X GATE=%X CHnA16=%X FC=%X ADDR=%04X:%04X,%04X:%04X => RATE=%5.4f ROOT=%02X [%s] [REF=%6.2fHz,ACT=%6.2fHz,ROOT=%5.2f]\n", ch, timer, freq, !rst, !!gate, !!cha16, 7 - fc, start_addr, start_wc, loop_addr, loop_wc, playback, rootkey, rootkeyname, ref, act, root);
 }
 #endif
 
@@ -1420,6 +1493,9 @@ void z80out(void* context, u16 addr, u8 data)
 			printf("CH0CSH = %02X ", data);
 			EMUPrintCH(ctx, 0);
 #endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 0);
+#endif
 			break;
 		case 0x82:
 			/* CH1CSL */
@@ -1435,6 +1511,9 @@ void z80out(void* context, u16 addr, u8 data)
 #ifdef DEBUG_CH
 			printf("CH1CSH = %02X ", data);
 			EMUPrintCH(ctx, 1);
+#endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 1);
 #endif
 			break;
 		case 0x84:
@@ -1452,6 +1531,9 @@ void z80out(void* context, u16 addr, u8 data)
 			printf("CH2CSH = %02X ", data);
 			EMUPrintCH(ctx, 2);
 #endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 2);
+#endif
 			break;
 		case 0x86:
 			/* CH3CSL */
@@ -1467,6 +1549,9 @@ void z80out(void* context, u16 addr, u8 data)
 #ifdef DEBUG_CH
 			printf("CH3CSH = %02X ", data);
 			EMUPrintCH(ctx, 3);
+#endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 3);
 #endif
 			break;
 		case 0x88:
@@ -1484,6 +1569,9 @@ void z80out(void* context, u16 addr, u8 data)
 			printf("CH4CSH = %02X ", data);
 			EMUPrintCH(ctx, 4);
 #endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 4);
+#endif
 			break;
 		case 0x8A:
 			/* CH5CSL */
@@ -1499,6 +1587,9 @@ void z80out(void* context, u16 addr, u8 data)
 #ifdef DEBUG_CH
 			printf("CH5CSH = %02X ", data);
 			EMUPrintCH(ctx, 5);
+#endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 5);
 #endif
 			break;
 		case 0x8C:
@@ -1516,6 +1607,9 @@ void z80out(void* context, u16 addr, u8 data)
 			printf("CH6CSH = %02X ", data);
 			EMUPrintCH(ctx, 6);
 #endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 6);
+#endif
 			break;
 		case 0x8E:
 			/* CH7CSL */
@@ -1531,6 +1625,9 @@ void z80out(void* context, u16 addr, u8 data)
 #ifdef DEBUG_CH
 			printf("CH7CSH = %02X ", data);
 			EMUPrintCH(ctx, 7);
+#endif
+#ifdef DEBUG_CHCONFIG
+			EMUPrintCHConfig(ctx, 7);
 #endif
 			break;
 		case 0xC0: /* LED0CS */
